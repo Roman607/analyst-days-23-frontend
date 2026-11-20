@@ -8,8 +8,9 @@ const fixedEntries = {
   hackathon: "Хакатон",
 };
 
-function Card({ entry, item, conflicts, dimmed, disabled, onAction }: {
+function Card({ entry, room, item, conflicts, dimmed, disabled, onAction }: {
   entry: Entry;
+  room?: string;
   item?: PreviewItem;
   conflicts: string[];
   dimmed: boolean;
@@ -21,7 +22,7 @@ function Card({ entry, item, conflicts, dimmed, disabled, onAction }: {
   const state = item?.state ?? (dimmed && !fixed ? "dimmed" : "neutral");
   const content = (
     <>
-      <span className="card-time">{entry.starts_at}–{entry.ends_at}</span>
+      <span className="card-time">{entry.starts_at}–{entry.ends_at}{room && ` · ${room}`}</span>
       <strong className="card-title">{entry.title}</strong>
       {entry.speakers && <span className="card-speakers">{entry.speakers}</span>}
       {entry.previous_part_id && <span className="card-speakers">Продолжение мастер-класса</span>}
@@ -80,6 +81,7 @@ export function Schedule({ snapshot, disabled, onAction }: {
   const titles = new Map(program.entries.map((entry) => [entry.id, entry.title]));
   const dimmed = Boolean(selection.input.topic_ids.length || items.size);
   const rooms = [...program.rooms].sort((a, b) => a.id.localeCompare(b.id));
+  const roomNames = new Map(rooms.map((room) => [room.id, room.name]));
 
   function card(entry: Entry) {
     const item = items.get(entry.id);
@@ -87,6 +89,7 @@ export function Schedule({ snapshot, disabled, onAction }: {
       <Card
         key={entry.id}
         entry={entry}
+        room={entry.room_id ? roomNames.get(entry.room_id) : undefined}
         item={item}
         conflicts={item?.conflicts_with.map((id) => titles.get(id) ?? "") ?? []}
         dimmed={dimmed}
@@ -99,7 +102,7 @@ export function Schedule({ snapshot, disabled, onAction }: {
   return program.days.map((day) => {
     const label = dateLabel(day, { day: "numeric", month: "long" });
     const entries = program.entries.filter((entry) => entry.day === day);
-    const byStart = Map.groupBy(entries, (entry) => entry.starts_at);
+    const startTimes = [...new Set(entries.map((entry) => entry.starts_at))].sort();
     return (
       <section className="day-section" key={day} id={`day-${day}`} aria-labelledby={`label-${day}`}>
         <div className="mb-3 flex items-baseline gap-3">
@@ -115,10 +118,10 @@ export function Schedule({ snapshot, disabled, onAction }: {
               </tr>
             </thead>
             <tbody>
-              {[...byStart.keys()].sort().map((start) => {
-                const events = byStart.get(start)!;
+              {startTimes.map((start) => {
+                const events = entries.filter((entry) => entry.starts_at === start);
                 const common = events.filter((entry) => entry.room_id === null);
-                const inRooms = Map.groupBy(events.filter((entry) => entry.room_id !== null), (entry) => entry.room_id);
+                const inRooms = events.filter((entry) => entry.room_id !== null);
                 return (
                   <Fragment key={start}>
                     {common.length > 0 && (
@@ -127,14 +130,17 @@ export function Schedule({ snapshot, disabled, onAction }: {
                         <td colSpan={rooms.length}><div className="common-events">{common.map(card)}</div></td>
                       </tr>
                     )}
-                    {inRooms.size > 0 && (
+                    {inRooms.length > 0 && (
                       <tr>
                         <th scope="row" className="sticky-time"><time>{start}</time></th>
-                        {rooms.map((room) => (
-                          <td key={room.id} className={inRooms.has(room.id) ? "" : "room-empty"}>
-                            <div className="grid gap-2">{inRooms.get(room.id)?.map(card)}</div>
-                          </td>
-                        ))}
+                        {rooms.map((room) => {
+                          const roomEntries = inRooms.filter((entry) => entry.room_id === room.id);
+                          return (
+                            <td key={room.id} className={roomEntries.length ? "" : "room-empty"}>
+                              <div className="grid gap-2">{roomEntries.map(card)}</div>
+                            </td>
+                          );
+                        })}
                       </tr>
                     )}
                   </Fragment>
